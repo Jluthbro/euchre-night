@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Euchre Night</title>
+<meta name="description" content="Play euchre in your browser. Host a table, send friends the room code, and bots fill any empty seats.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230b5d3b'/><text x='50' y='72' font-size='62' text-anchor='middle' fill='white'>♠</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="screen-home" class="screen">
+  <div class="home-card">
+    <h1 class="brand">Euchre <span>Night</span></h1>
+    <p class="tagline">Four seats. Ten points. Bring your friends — bots cover anyone who's late.</p>
+
+    <label class="field">
+      <span>Your name</span>
+      <input id="nameInput" maxlength="16" autocomplete="nickname" placeholder="e.g. Justin">
+    </label>
+
+    <div class="mode-buttons">
+      <button id="btnSolo" class="mode">
+        <strong>Play now</strong>
+        <small>You + 3 bots, instantly</small>
+      </button>
+      <button id="btnHost" class="mode">
+        <strong>Host a table</strong>
+        <small>Get a room code to share</small>
+      </button>
+      <div class="mode join-mode">
+        <strong>Join a table</strong>
+        <div class="join-row">
+          <input id="codeInput" maxlength="8" placeholder="CODE" autocapitalize="characters" autocomplete="off" spellcheck="false">
+          <button id="btnJoin">Join</button>
+        </div>
+      </div>
+    </div>
+
+    <label class="option-row" id="stickRow">
+      <input type="checkbox" id="stickToggle" checked>
+      <span><strong>Stick the dealer</strong> — if everyone passes twice, the dealer must call trump</span>
+    </label>
+
+    <p class="fineprint" id="netNote">Online tables connect friends directly between browsers. The host keeps their tab open; anyone who drops out is covered by a bot until they rejoin.</p>
+  </div>
+</div>
+
+<div id="screen-table" class="screen" hidden>
+  <header id="topbar">
+    <div class="brand-mini">♠ Euchre Night</div>
+    <button id="roomChip" class="chip" hidden title="Copy invite link"></button>
+    <div id="trumpChip" class="chip" hidden></div>
+    <div id="scoreboard"></div>
+    <button id="btnLeave" class="chip ghost">Leave</button>
+  </header>
+
+  <main id="table">
+    <div class="seat pos-top" id="seat-2"></div>
+    <div class="seat pos-left" id="seat-1"></div>
+    <div class="seat pos-right" id="seat-3"></div>
+    <div class="seat pos-bottom" id="seat-0"></div>
+    <div id="center">
+      <div id="upcardArea"></div>
+      <div id="trickArea">
+        <div class="slot slot-bottom"></div>
+        <div class="slot slot-left"></div>
+        <div class="slot slot-top"></div>
+        <div class="slot slot-right"></div>
+      </div>
+    </div>
+    <div id="ticker" title="Show game log"></div>
+  </main>
+
+  <div id="actionBar"></div>
+  <div id="handArea"></div>
+
+  <div id="logDrawer" hidden>
+    <div class="log-head">Game log <button id="btnCloseLog">×</button></div>
+    <ul id="logList"></ul>
+  </div>
+</div>
+
+<div id="overlay" hidden><div id="overlayCard"></div></div>
+<div id="toasts"></div>
+
+<script src="vendor/peerjs.min.js" onerror="(function(){var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js';document.head.appendChild(s);})()"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

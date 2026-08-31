@@ -1,0 +1,11 @@
+{
+  "name": "euchre-night",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser euchre for four friends: host a table, share a room code, bots fill empty seats.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "serve": "python3 -m http.server 8000"
+  }
+}
