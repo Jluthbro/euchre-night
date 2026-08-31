@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -24,19 +22,17 @@ jobs:
           node-version: 22
       - run: npm test
 
+  # GitHub Pages serves the gh-pages branch; publishing is just mirroring
+  # main onto it once tests pass. GitHub's own "pages build and deployment"
+  # workflow picks it up from there.
   deploy:
     needs: test
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
         with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          fetch-depth: 0
+      - name: Publish main to gh-pages
+        run: git push --force origin HEAD:gh-pages

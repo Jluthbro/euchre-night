@@ -1,8 +1,9 @@
 # Euchre Night — notes for future sessions
 
 Static browser game, no build step, no runtime dependencies (PeerJS is
-vendored in `vendor/`). The repo root is the site root — GitHub Pages
-serves it directly from `main`.
+vendored in `vendor/`). The repo root is the site root. GitHub Pages
+serves the `gh-pages` branch; CI mirrors `main` onto it after tests pass,
+so never edit `gh-pages` directly.
 
 ## Commands
 
