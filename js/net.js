@@ -8,6 +8,11 @@ const PROTO = 1;
 const ID_PREFIX = 'euchre-night-v1-';
 // No ambiguous characters (0/O, 1/I/L) — codes get read out loud.
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const CONNECT_TIMEOUT_MS = 15000;
+// App-level heartbeat: WebRTC can take 30s+ to notice a vanished peer, which
+// is too long for a card table. Silence past the timeout means "gone".
+const PULSE_INTERVAL_MS = 4000;
+const PULSE_TIMEOUT_MS = 12000;
 
 export function randomCode(len = 5) {
   let code = '';
@@ -25,8 +30,25 @@ export function peerAvailable() {
   return typeof window !== 'undefined' && typeof window.Peer === 'function';
 }
 
+// Signaling defaults to the free PeerJS cloud broker. To self-host, set
+// window.EUCHRE_PEER_SERVER = { host, port, path, secure } before the app
+// loads (tests use this to point at a local PeerServer).
+function peerOptions() {
+  const custom = typeof window !== 'undefined' ? window.EUCHRE_PEER_SERVER : null;
+  return custom ? { ...custom } : {};
+}
+
 function newPeer(id) {
-  return id ? new window.Peer(id) : new window.Peer();
+  return id ? new window.Peer(id, peerOptions()) : new window.Peer(peerOptions());
+}
+
+// If the broker connection drops, get it back so new players can still find
+// the table. Existing games keep running over their direct connections.
+function keepBrokerAlive(peer, isClosed) {
+  peer.on('disconnected', () => {
+    if (isClosed() || peer.destroyed) return;
+    try { peer.reconnect(); } catch { /* fatal errors surface via 'error' */ }
+  });
 }
 
 export class NetHost {
@@ -38,25 +60,52 @@ export class NetHost {
     this.started = false;
     this.peer = null;
     this.code = null;
+    this.openTimer = null;
     // Seat 0 is the host. Others start open; bots fill them at start time.
     this.seatMeta = [
       { name: hostName, kind: 'human', conn: null, lastHumanName: hostName },
       ...[1, 2, 3].map(() => ({ name: null, kind: 'open', conn: null, lastHumanName: null })),
     ];
     this.closed = false;
+    this.pulse = setInterval(() => this.checkPulse(), PULSE_INTERVAL_MS);
     this.openPeer();
   }
 
+  checkPulse() {
+    if (this.closed) return;
+    const now = Date.now();
+    for (const m of this.seatMeta) {
+      const conn = m.conn;
+      if (!conn || !conn.open) continue;
+      if (now - (conn._lastSeen || now) > PULSE_TIMEOUT_MS) {
+        try { conn.close(); } catch { /* already gone */ }
+        this.handleLeave(conn);
+        continue;
+      }
+      try { conn.send({ t: 'ping' }); } catch { /* handled on next pulse */ }
+    }
+  }
+
   openPeer(attempt = 0) {
+    clearTimeout(this.openTimer);
     this.code = randomCode();
     const peer = newPeer(ID_PREFIX + this.code);
     this.peer = peer;
+    let opened = false;
+    this.openTimer = setTimeout(() => {
+      if (opened || this.closed) return;
+      peer.destroy();
+      this.cb.onError('Timed out reaching the matchmaking server. Check your connection and try again.');
+    }, CONNECT_TIMEOUT_MS);
     peer.on('open', () => {
+      opened = true;
+      clearTimeout(this.openTimer);
       if (this.closed) return;
       this.cb.onCode(this.code);
       this.emitLobby();
     });
     peer.on('connection', (conn) => this.handleConnection(conn));
+    keepBrokerAlive(peer, () => this.closed);
     peer.on('error', (err) => {
       if (this.closed) return;
       if (err.type === 'unavailable-id' && attempt < 3) {
@@ -64,12 +113,15 @@ export class NetHost {
         return;
       }
       if (err.type === 'peer-unavailable') return; // stale conn attempt, ignore
+      if (!opened) clearTimeout(this.openTimer);
       this.cb.onError(describePeerError(err));
     });
   }
 
   handleConnection(conn) {
+    conn._lastSeen = Date.now();
     conn.on('data', (msg) => {
+      conn._lastSeen = Date.now();
       if (!msg || typeof msg !== 'object') return;
       if (msg.t === 'hello') this.handleHello(conn, msg);
       else if (msg.t === 'act') this.handleAct(conn, msg);
@@ -187,6 +239,8 @@ export class NetHost {
 
   close() {
     this.closed = true;
+    clearTimeout(this.openTimer);
+    clearInterval(this.pulse);
     if (this.game) this.game.destroy();
     if (this.peer) this.peer.destroy();
   }
@@ -203,6 +257,16 @@ export class NetClient {
 
     const peer = newPeer();
     this.peer = peer;
+    this.lastHeard = Date.now();
+    this.pulse = setInterval(() => {
+      if (this.gotIn && !this.closed && Date.now() - this.lastHeard > PULSE_TIMEOUT_MS * 1.5) {
+        this.handleClosed(); // host vanished without a clean close
+      }
+    }, PULSE_INTERVAL_MS);
+    this.timer = setTimeout(() => {
+      if (this.gotIn || this.closed) return;
+      this.fail(`Couldn’t reach table ${this.code}. Check the code, and that your host still has the game open. If you’re both online, a strict network may be blocking the direct connection.`);
+    }, CONNECT_TIMEOUT_MS);
     peer.on('open', () => {
       const conn = peer.connect(ID_PREFIX + this.code, { reliable: true });
       this.conn = conn;
@@ -211,21 +275,36 @@ export class NetClient {
       conn.on('close', () => this.handleClosed());
       conn.on('error', () => this.handleClosed());
     });
+    keepBrokerAlive(peer, () => this.closed);
     peer.on('error', (err) => {
       if (this.closed) return;
       if (err.type === 'peer-unavailable') {
-        this.cb.onError(`No table found with code ${this.code}. Check the code with your host.`);
+        this.fail(`No table found with code ${this.code}. Check the code with your host.`);
       } else {
-        this.cb.onError(describePeerError(err));
+        this.fail(describePeerError(err));
       }
     });
   }
 
+  fail(msg) {
+    if (this.closed) return;
+    this.closed = true;
+    clearTimeout(this.timer);
+    clearInterval(this.pulse);
+    this.cb.onError(msg);
+    if (this.peer) this.peer.destroy();
+  }
+
   handleData(msg) {
     if (!msg || typeof msg !== 'object' || this.closed) return;
+    this.lastHeard = Date.now();
     switch (msg.t) {
+      case 'ping':
+        if (this.conn && this.conn.open) this.conn.send({ t: 'pong' });
+        break;
       case 'welcome':
         this.gotIn = true;
+        clearTimeout(this.timer);
         this.seat = msg.seat;
         this.cb.onWelcome(msg.seat);
         break;
@@ -236,8 +315,7 @@ export class NetClient {
         this.cb.onView(msg.view);
         break;
       case 'err':
-        this.cb.onError(msg.msg);
-        this.close();
+        this.fail(msg.msg);
         break;
     }
   }
@@ -245,6 +323,8 @@ export class NetClient {
   handleClosed() {
     if (this.closed) return;
     this.closed = true;
+    clearTimeout(this.timer);
+    clearInterval(this.pulse);
     this.cb.onClosed(this.gotIn);
   }
 
@@ -254,6 +334,8 @@ export class NetClient {
 
   close() {
     this.closed = true;
+    clearTimeout(this.timer);
+    clearInterval(this.pulse);
     if (this.peer) this.peer.destroy();
   }
 }
@@ -275,7 +357,7 @@ function uniqueName(name, others) {
 function describePeerError(err) {
   const type = err && err.type ? err.type : 'unknown';
   if (type === 'network' || type === 'server-error' || type === 'socket-error' || type === 'socket-closed') {
-    return 'Lost contact with the matchmaking server. Check your connection and try again.';
+    return 'Couldn’t reach the matchmaking server. Check your connection and try again.';
   }
   if (type === 'browser-incompatible') {
     return 'This browser does not support WebRTC — try Chrome, Edge, Firefox, or Safari.';

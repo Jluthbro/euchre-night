@@ -81,10 +81,20 @@ function startHost() {
       onCode: (code) => {
         context.roomCode = code;
         context.shareUrl = shareUrlFor(code);
+        ui.clearNotice();
       },
       onLobby: (lobby) => ui.renderLobby(lobby, context),
       onState: (view) => ui.renderTable(view, context),
-      onError: (msg) => ui.toast(msg),
+      onError: (msg) => {
+        if (context.roomCode) {
+          ui.toast(msg);
+          return;
+        }
+        ui.showNotice('Couldn’t open a table', msg, [
+          { label: 'Try again', onClick: startHost },
+          { label: 'Back to menu', quiet: true, onClick: leaveToHome },
+        ]);
+      },
     },
   });
   ui.setHandlers({
@@ -95,7 +105,9 @@ function startHost() {
   });
   session = { kind: 'host', destroy: () => net.close() };
   ui.showScreen('table');
-  ui.showNotice('Opening your table…', 'Getting a room code from the matchmaking server.');
+  ui.showNotice('Opening your table…', 'Getting a room code from the matchmaking server.', [
+    { label: 'Cancel', quiet: true, onClick: leaveToHome },
+  ]);
 }
 
 // ---------- join ----------
@@ -125,7 +137,8 @@ function startClient(rawCode) {
       },
       onError: (msg) => {
         ui.showNotice('Couldn’t join the table', msg, [
-          { label: 'Back', onClick: leaveToHome },
+          { label: 'Try again', onClick: () => startClient(code) },
+          { label: 'Back to menu', quiet: true, onClick: leaveToHome },
         ]);
       },
       onClosed: (gotIn) => {
@@ -149,7 +162,9 @@ function startClient(rawCode) {
   });
   session = { kind: 'client', destroy: () => client.close() };
   ui.showScreen('table');
-  ui.showNotice('Joining…', `Looking for table ${code}.`);
+  ui.showNotice('Joining…', `Looking for table ${code}.`, [
+    { label: 'Cancel', quiet: true, onClick: leaveToHome },
+  ]);
 }
 
 function requirePeer() {

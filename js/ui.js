@@ -95,6 +95,7 @@ export function renderTable(view, context) {
   ctx = context;
   latestView = view;
   lobbyData = null;
+  notice = null; // a live game supersedes any "connecting…" notice
 
   const trickKey = view.lastTrick ? `${view.handNumber}:${view.lastTrick.number}` : null;
   const sameHand = lastPaintedHand === view.handNumber;
@@ -399,6 +400,7 @@ function paintHand(view) {
 export function renderLobby(lobby, context) {
   ctx = { ...ctx, ...context };
   lobbyData = lobby;
+  notice = null; // the lobby supersedes any "connecting…" notice
   refreshOverlay();
 }
 

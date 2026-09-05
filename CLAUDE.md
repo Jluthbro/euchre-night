@@ -11,6 +11,9 @@ so never edit `gh-pages` directly.
   bot-vs-bot games. Run after ANY change to `js/game.js`, `js/cards.js`,
   or `js/ai.js`.
 - `npm run serve` — local dev server (ES modules don't load over file://).
+- `tests/online/online.mjs` — real two-browser multiplayer test (Playwright +
+  a local PeerServer; setup steps in the file header). Run it after touching
+  `js/net.js`, `js/main.js`, or the lobby/notice flow in `js/ui.js`.
 
 ## Architecture rules
 
